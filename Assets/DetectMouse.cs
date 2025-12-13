@@ -8,6 +8,8 @@ public class DetectMouse : MonoBehaviour
     [SerializeField] float rayRange = 5;
     [SerializeField] LayerMask layer;
     private bool clicked;
+    private Vector3 targetPosition;
+    [SerializeField] private float speed = 2;
 
     private void Update()
     {
@@ -16,11 +18,17 @@ public class DetectMouse : MonoBehaviour
         {
             if (clicked)
             {
-                transform.position = hit.point;
+                targetPosition = hit.point;
                 transform.rotation = Quaternion.LookRotation(hit.normal);
             }
         }
         clicked = false;
+        MoveToTarget();
+    }
+
+    void MoveToTarget()
+    {
+        transform.position = Vector3.MoveTowards(transform.position, targetPosition, speed * Time.deltaTime);
     }
 
     void OnMousePosition(InputValue value)

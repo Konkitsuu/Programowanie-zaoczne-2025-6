@@ -9,16 +9,22 @@ public class Player : MonoBehaviour
     // bool - zmienna logiczna true/false
 
     [SerializeField] private float speed = 2;
+    [SerializeField] private float lookSpeed = 100;
     [SerializeField] private float jumpForce = 10;
+    [SerializeField] private float interactionRange = 10;
     public int health = 5;
     [SerializeField]
     private bool isAlive;
     //ctrl + r + r - replace wszêdzie
     [SerializeField] private bool isOnTheRight;
-
+    [SerializeField] private Transform cameraTransform;
+    [SerializeField] private GameObject hitParticles;
+    [SerializeField] private ParticleSystem shootParticles;
     private float timer = 1;
     private Vector2 moveInput;
+    private Vector2 lookInput;
     private Rigidbody rb;
+
 
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
@@ -32,56 +38,66 @@ public class Player : MonoBehaviour
         Debug.Log(text1 + health);
 
         isAlive = !isAlive;
-
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
     }
 
     // Update is called once per frame
     void Update()
     {
-        //health -= 1 * Time.deltaTime;
-        isAlive = health > 0;
-        isOnTheRight = transform.position.x > 5;
-        timer -= Time.deltaTime;
-        if (timer <= 0)
-        {
-            health--;
-            timer = 1;
-        }
-
-        if (Keyboard.current.spaceKey.wasPressedThisFrame)
-        {
-            print("Space pressed");
-        }
-
-        //if (isAlive)
-        //{
-        //    print("is alive");
-        //}
-        //if (Keyboard.current.dKey.isPressed)
-        //{
-        //    transform.Translate(speed * Time.deltaTime, 0, 0);
-        //}
-        //if (Keyboard.current.aKey.isPressed)
-        //{
-        //    transform.Translate(-speed * Time.deltaTime, 0, 0);
-        //}
         Vector2 moveVector = moveInput * speed * Time.deltaTime;
 
-        //transform.position += new Vector3(moveVector.x, 0, moveVector.y);
-
+        transform.Rotate(new Vector3(0, lookInput.x * lookSpeed * Time.deltaTime, 0));
+        cameraTransform.transform.Rotate(new Vector3(-lookInput.y * lookSpeed * Time.deltaTime, 0, 0));
     }
 
     private void FixedUpdate()
     {
         Vector2 moveVector = moveInput * speed;
-        rb.AddForce(new Vector3(moveVector.x, 0, moveVector.y));
+        rb.linearVelocity = transform.forward * moveVector.y + transform.right * moveVector.x;
     }
 
     private void OnMove(InputValue value)
     {
         moveInput = value.Get<Vector2>();
+    }
 
-        print("Move input pressed " + moveInput);
+    private void OnLook(InputValue value)
+    {
+        lookInput = value.Get<Vector2>();
+    }
+
+    private void OnAttack()
+    {
+        Ray ray = Camera.main.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0));
+        shootParticles.Emit(1);
+
+        if (Physics.Raycast(ray, out RaycastHit hit))
+        {
+            if (hit.collider.CompareTag("Enemy"))
+            {
+                Destroy(hit.collider.gameObject);
+            }
+            else
+            {
+                GameObject spawnedParticle = Instantiate(hitParticles, hit.point, Quaternion.LookRotation(hit.normal));
+                Destroy(spawnedParticle, 2);
+            }
+            Debug.Log(hit.transform.gameObject.name);
+        }
+    }
+
+    private void OnInteract()
+    {
+        Ray ray = Camera.main.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0));
+
+        if (Physics.Raycast(ray, out RaycastHit hit,interactionRange))
+        {
+            if(hit.collider.TryGetComponent(out Interactable interactable))
+            {
+                interactable.Interact();
+            }
+        }
     }
 
     private void OnJump(InputValue value)
