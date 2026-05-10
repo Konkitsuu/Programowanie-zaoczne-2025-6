@@ -8,16 +8,7 @@ public class BirdLancher : MonoBehaviour, BirsActions.ILancherActions
     private float launchSpeed = 5;
 
     [SerializeField]
-    private int trajectoryPositions = 20;
-
-    [SerializeField]
-    private float trajectoryTimeStep = 0.1f;
-
-    [SerializeField]
     private float minLaunchDelta = 0.1f;
-
-    [SerializeField]
-    private LineRenderer trajectoryLine;
 
     [SerializeField]
     private LayerMask quadLayer;
@@ -27,15 +18,17 @@ public class BirdLancher : MonoBehaviour, BirsActions.ILancherActions
 
     [SerializeField]
     private List<Bird> birds;
+
+    [SerializeField]
+    private TrajectoryDrawer trajectoryDrawer;
+
     private BirsActions inputActions;
     private BirsActions.LancherActions lancherActions;
     private Vector3 mousePosition;
     private Vector3 mousePositionWorld;
     private Vector3 mouseDelta;
     private Vector3 startAimMousePosition;
-
-    public bool isAiming;
-    public bool isShooting;
+    private BirdState state;
     private Bird loadedBird;
 
     void Start()
@@ -50,21 +43,33 @@ public class BirdLancher : MonoBehaviour, BirsActions.ILancherActions
     // Update is called once per frame
     void Update()
     {
-        if (isAiming)
+        if (state == BirdState.Aiming && mouseDelta.magnitude >= minLaunchDelta)
         {
-            DrawTrajectory();
+            trajectoryDrawer.SetLineEnabled(true);
+            Vector3 velocity = mouseDelta * launchSpeed;
+            trajectoryDrawer.DrawTrajectory(startAimMousePosition, velocity);
         }
-        if (isShooting)
+        else
+        {
+            trajectoryDrawer.SetLineEnabled(false);
+        }
+
+        if (state == BirdState.Shooting)
         {
             if (loadedBird != null && loadedBird.rigidbody != null)
             {
-                if (loadedBird.rigidbody.linearVelocity.magnitude < 0.1f)
+                if (loadedBird.rigidbody.linearVelocity.magnitude < 0.1f || loadedBird.transform.position.y < -20)
                 {
                     //bird stopped
-                    isShooting = false;
+                    state = BirdState.Idle;
                     Destroy(loadedBird.gameObject);
                     LoadNextBird();
                 }
+            }
+            else
+            {
+                state = BirdState.Idle;
+                LoadNextBird();
             }
         }
     }
@@ -92,7 +97,7 @@ public class BirdLancher : MonoBehaviour, BirsActions.ILancherActions
         mousePositionWorld = GetMousePositionWorld();
         mouseDelta = startAimMousePosition - mousePositionWorld;
 
-        if (isAiming)
+        if (state == BirdState.Aiming)
         {
             loadedBird.rigidbody.position = startAimMousePosition - mouseDelta;
         }
@@ -100,8 +105,9 @@ public class BirdLancher : MonoBehaviour, BirsActions.ILancherActions
 
     public void OnMousePress(InputAction.CallbackContext context)
     {
-        if (isShooting)
+        if (state == BirdState.Shooting && loadedBird != null)
         {
+            loadedBird.Activate();
             return;
         }
 
@@ -112,27 +118,28 @@ public class BirdLancher : MonoBehaviour, BirsActions.ILancherActions
             {
                 if (hit.collider.GetComponent<Bird>() == loadedBird)
                 {
-                    isAiming = true;
-                    trajectoryLine.enabled = true;
+                    state = BirdState.Aiming;
+                    trajectoryDrawer.SetLineEnabled(true);
                     startAimMousePosition = mousePositionWorld;
                 }
             }
         }
 
-        if (isAiming && context.canceled)
+        if (state == BirdState.Aiming && context.canceled)
         {
             if (mouseDelta.magnitude > minLaunchDelta)
             {
                 loadedBird.rigidbody.isKinematic = false;
                 loadedBird.rigidbody.linearVelocity = mouseDelta * launchSpeed;
-                isShooting = true;
+                state = BirdState.Shooting;
             }
             else
             {
                 loadedBird.rigidbody.position = transform.position;
+                state = BirdState.Idle;
             }
-            isAiming = false;
-            trajectoryLine.enabled = false;
+
+            trajectoryDrawer.SetLineEnabled(false);
         }
     }
 
@@ -144,26 +151,5 @@ public class BirdLancher : MonoBehaviour, BirsActions.ILancherActions
             return hit.point;
         }
         return Vector3.zero;
-    }
-
-    private void DrawTrajectory()
-    {
-        if (mouseDelta.magnitude < minLaunchDelta)
-        {
-            trajectoryLine.enabled = false;
-            return;
-        }
-        trajectoryLine.enabled = true;
-        Vector3 velocity = mouseDelta * launchSpeed;
-
-        trajectoryLine.positionCount = trajectoryPositions;
-        for (int i = 0; i < trajectoryPositions; i++)
-        {
-            //pos(t) = startPos + v*t + gravity * t * t/2
-            float t = trajectoryTimeStep * i;
-            Vector3 position =
-                loadedBird.rigidbody.position + velocity * t + Physics.gravity * t * t / 2;
-            trajectoryLine.SetPosition(i, position);
-        }
     }
 }
