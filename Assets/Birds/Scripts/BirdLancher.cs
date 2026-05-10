@@ -1,22 +1,41 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 public class BirdLancher : MonoBehaviour, BirsActions.ILancherActions
 {
-    [SerializeField] private float launchSpeed = 5;
-    [SerializeField] private int trajectoryPositions = 20;
-    [SerializeField] private float trajectoryTimeStep = 0.1f;
-    [SerializeField] private LineRenderer trajectoryLine;
+    [SerializeField]
+    private float launchSpeed = 5;
+
+    [SerializeField]
+    private int trajectoryPositions = 20;
+
+    [SerializeField]
+    private float trajectoryTimeStep = 0.1f;
+
+    [SerializeField]
+    private float minLaunchDelta = 0.1f;
+
+    [SerializeField]
+    private LineRenderer trajectoryLine;
+
+    [SerializeField]
+    private List<Bird> birds;
     private BirsActions inputActions;
     private BirsActions.LancherActions lancherActions;
-    private Vector3 mouseStartWorld;
     private Vector3 mousePosition;
-    [SerializeField] private LayerMask quadLayer;
-    [SerializeField] LineRenderer lineRenderer;
-    [SerializeField] GameObject birdPrefab;
+    private Vector3 mousePositionWorld;
+    private Vector3 mouseDelta;
+    private Vector3 startAimMousePosition;
+
+    [SerializeField]
+    private LayerMask quadLayer;
+
+    [SerializeField]
+    GameObject birdPrefab;
     private bool isAiming;
     private bool isShooting;
-    private Rigidbody birdRigidbody;
+    private Bird loadedBird;
 
     void Start()
     {
@@ -24,9 +43,9 @@ public class BirdLancher : MonoBehaviour, BirsActions.ILancherActions
         lancherActions = inputActions.Lancher;
         lancherActions.AddCallbacks(this);
         lancherActions.Enable();
+        LoadBird(birds[0]);
+        birds.RemoveAt(0);
     }
-
-
 
     // Update is called once per frame
     void Update()
@@ -37,31 +56,41 @@ public class BirdLancher : MonoBehaviour, BirsActions.ILancherActions
         }
         if (isShooting)
         {
-            if (birdRigidbody != null)
+            if (loadedBird != null && loadedBird.rigidbody != null)
             {
-                if (birdRigidbody.linearVelocity.magnitude < 0.1f)
+                if (loadedBird.rigidbody.linearVelocity.magnitude < 0.1f)
                 {
                     //bird stopped
                     isShooting = false;
-                    birdRigidbody.isKinematic = true;
-                    birdRigidbody.position = transform.position;
+                    loadedBird.rigidbody.isKinematic = true;
+                    loadedBird.rigidbody.position = transform.position;
                 }
             }
         }
     }
 
+    public void LoadBird(Bird bird)
+    {
+        this.loadedBird = bird;
+        bird.rigidbody.isKinematic = true;
+        bird.rigidbody.position = transform.position;
+    }
+
     public void OnMousePosition(InputAction.CallbackContext context)
     {
         mousePosition = context.ReadValue<Vector2>();
+        mousePositionWorld = GetMousePositionWorld();
+        mouseDelta = startAimMousePosition - mousePositionWorld;
+
         if (isAiming)
         {
-            lineRenderer.SetPosition(1, GetMousePositionWorld());
+            loadedBird.rigidbody.position = startAimMousePosition - mouseDelta;
         }
     }
 
     public void OnMousePress(InputAction.CallbackContext context)
     {
-        if(isShooting)
+        if (isShooting)
         {
             return;
         }
@@ -71,38 +100,36 @@ public class BirdLancher : MonoBehaviour, BirsActions.ILancherActions
             Ray ray = Camera.main.ScreenPointToRay(mousePosition);
             if (Physics.Raycast(ray, out RaycastHit hit))
             {
-                if (hit.collider.CompareTag("Bird"))
+                if (hit.collider.GetComponent<Bird>() == loadedBird)
                 {
-                    mouseStartWorld = hit.point;
-                    lineRenderer.SetPosition(0, mouseStartWorld);
-                    lineRenderer.SetPosition(1, mouseStartWorld);
-                    print(mouseStartWorld);
                     isAiming = true;
                     trajectoryLine.enabled = true;
-                    lineRenderer.enabled = true;
-                    birdRigidbody = hit.collider.GetComponent<Rigidbody>();
-
+                    startAimMousePosition = mousePositionWorld;
                 }
             }
         }
 
         if (isAiming && context.canceled)
         {
-            Vector3 currentMouseWorlds = GetMousePositionWorld();
-            Vector3 delta = mouseStartWorld - currentMouseWorlds;
-            birdRigidbody.isKinematic = false;
-            birdRigidbody.linearVelocity = delta * launchSpeed;
+            if (mouseDelta.magnitude > minLaunchDelta)
+            {
+                loadedBird.rigidbody.isKinematic = false;
+                loadedBird.rigidbody.linearVelocity = mouseDelta * launchSpeed;
+                isShooting = true;
+            }
+            else
+            {
+                loadedBird.rigidbody.position = transform.position;
+            }
             isAiming = false;
             trajectoryLine.enabled = false;
-            lineRenderer.enabled = false;
-            isShooting = true;
         }
     }
 
     private Vector3 GetMousePositionWorld()
     {
         Ray ray = Camera.main.ScreenPointToRay(mousePosition);
-        if (Physics.Raycast(ray, out RaycastHit hit))
+        if (Physics.Raycast(ray, out RaycastHit hit, 10, quadLayer))
         {
             return hit.point;
         }
@@ -111,19 +138,21 @@ public class BirdLancher : MonoBehaviour, BirsActions.ILancherActions
 
     private void DrawTrajectory()
     {
-        Ray ray = Camera.main.ScreenPointToRay(mousePosition);
-        Vector3 delta = mouseStartWorld - GetMousePositionWorld();
-        Vector3 velocity = delta * launchSpeed;
+        if (mouseDelta.magnitude < minLaunchDelta)
+        {
+            trajectoryLine.enabled = false;
+            return;
+        }
+        trajectoryLine.enabled = true;
+        Vector3 velocity = mouseDelta * launchSpeed;
 
         trajectoryLine.positionCount = trajectoryPositions;
         for (int i = 0; i < trajectoryPositions; i++)
         {
             //pos(t) = startPos + v*t + gravity * t * t/2
             float t = trajectoryTimeStep * i;
-            Vector3 position = birdRigidbody.position + velocity * t + Physics.gravity * t * t / 2;
+            Vector3 position = loadedBird.rigidbody.position + velocity * t + Physics.gravity * t * t / 2;
             trajectoryLine.SetPosition(i, position);
         }
-
     }
-
 }
